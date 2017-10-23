@@ -22,7 +22,7 @@ defmodule Project3 do
 
   def process(args) do
     {numNodes, ""} = Integer.parse(Enum.at(args, 0))
-    numRequest = Integer.parse(Enum.at(args, 1))
+    {numRequest, ""} = Integer.parse(Enum.at(args, 1))
     logN = round(Float.ceil(Math.log(numNodes)/Math.log(4)))
     #IO.puts "log " <> inspect(logN)
     maxNodes = Math.pow(4, logN)
@@ -33,23 +33,49 @@ defmodule Project3 do
     :global.register_name(:server, self())
     :global.sync()
     firstGuy = :global.whereis_name(Enum.at(ranList,0))
-    toGuy = :global.whereis_name(Enum.random(ranList))
-    GenServer.cast firstGuy, {:route, toGuy}
-    loop(ranList, 1, numRequest, 0)
+    toList = ranList -- [Enum.at(ranList,0)]
+    toGuy = Enum.random(toList)
+    IO.puts "Start routing"
+    GenServer.cast(firstGuy, {:route, {toGuy, 0}})
+    {totalHops, reqSent} = loop(ranList, 1, numRequest, 0, 0, 0)
+    IO.puts "Done"
+    totalRoute = (numRequest*numNodes)
+    avg = totalHops/reqSent
+    IO.puts "Num routes: " <> inspect(reqSent) <>  " Num hops: " <> inspect(totalHops) <> " Avg: " <> inspect(avg)
   end
 
-  def loop(ranList, currentR, maxR, i) do
+  def loop(ranList, currentR, maxR, i, hopCount, reqSent) do
     receive do
-      {sender, :firstmsg} ->
-        IO.puts "THe ENd"
-  end
+      {sender, :firstmsg, hops} ->
+        if i < length(ranList) do
+          cond do
+            currentR < maxR ->
+              #IO.puts "Startedx" <> inspect(Enum.at(ranList,i)) <> " num" <> inspect(currentR)
+              firstGuy = :global.whereis_name(Enum.at(ranList,i))
+              toList = ranList -- [Enum.at(ranList,i)]
+              toGuy = Enum.random(toList)
+              GenServer.cast firstGuy, {:route, {toGuy, 0}}
+              loop(ranList, currentR + 1, maxR, i, (hopCount + hops), reqSent+1)
+            currentR == maxR ->
+              #IO.puts "Started" <> inspect(Enum.at(ranList,i)) <> " num" <> inspect(currentR)
+              firstGuy = :global.whereis_name(Enum.at(ranList,i))
+              toList = ranList -- [Enum.at(ranList,i)]
+              toGuy = Enum.random(toList)
+              GenServer.cast firstGuy, {:route, {toGuy, 0}}
+              loop(ranList, 1, maxR, i + 1, (hopCount + hops), reqSent+1)
+          end 
+        else
+          #IO.puts "THe ENd " <> inspect(reqSent)
+          {hopCount, reqSent}
+        end
+    end
   end
 
   def createNodes(ranList, numNodes, logN) do
-    IO.puts "id list " <> inspect(ranList)
+    #IO.puts "id list " <> inspect(ranList)
     if numNodes != 0 do
       thisId = Enum.at(ranList, numNodes-1)
-      IO.puts "myId " <> inspect(thisId)
+      #IO.puts "myId " <> inspect(thisId)
       listMinusMe = ranList--[thisId]
       rTable = Enum.reduce(listMinusMe, Matrix.new(logN, 4, -1), fn(eachId, rT) -> 
         chrThisId = toEqualLen(Integer.to_string(thisId, 4),logN)
@@ -63,7 +89,7 @@ defmodule Project3 do
         end
         rT
       end)
-      IO.inspect rTable
+      #IO.inspect rTable
       lLeaf = Enum.reduce(listMinusMe, [], fn(node, acc) ->
         #IO.inspect node
         #IO.puts inspect(acc)
@@ -100,8 +126,8 @@ defmodule Project3 do
                     acc
                 end 
             end 
-        IO.puts inspect(Enum.at(lLeaf,1)) <> " L DONE" <> inspect(lLeaf)<> " len: " <> inspect(length(lLeaf))
-        IO.puts inspect(Enum.at(sLeaf,1)) <> " S DONE " <> inspect(sLeaf) <> " len: " <> inspect(length(sLeaf))
+        #IO.puts inspect(Enum.at(lLeaf,1)) <> " L DONE" <> inspect(lLeaf)<> " len: " <> inspect(length(lLeaf))
+        #IO.puts inspect(Enum.at(sLeaf,1)) <> " S DONE " <> inspect(sLeaf) <> " len: " <> inspect(length(sLeaf))
         
       {:ok, heroPid} = PastryHero.start_link(thisId, lLeaf, sLeaf, rTable, ranList, logN)
       :global.register_name(thisId, heroPid)
